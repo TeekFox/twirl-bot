@@ -7,15 +7,21 @@ import discord
 from discord.ext import commands
 import openai
 from flask import Flask
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-OPENAI_KEY = os.getenv("OPENAI_KEY")
+
+# === KEYS FROM ENVIRONMENT ===
+DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
+OPENAI_KEY = os.environ.get("OPENAI_KEY")
+
+if not DISCORD_TOKEN:
+    raise RuntimeError("DISCORD_TOKEN env var is missing or empty. Check Render → Environment.")
+
+if not OPENAI_KEY:
+    raise RuntimeError("OPENAI_KEY env var is missing or empty. Check Render → Environment.")
 
 openai.api_key = OPENAI_KEY
 
-
-
 # === SETTINGS ===
-REPLY_CHANCE = 3     # 1-in-3 chance to reply
+REPLY_CHANCE = 3      # 1-in-3 chance to reply
 CHANNEL_COOLDOWN = 25 # seconds between replies per channel
 MAX_REPLY_LENGTH = 300
 
@@ -41,13 +47,15 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 channel_last_reply = {}
 
+
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} 🐌")
+    print("DISCORD_TOKEN length:", len(DISCORD_TOKEN))
+
 
 @bot.event
 async def on_message(message):
-
     if message.author.bot:
         return
 
@@ -89,34 +97,28 @@ async def on_message(message):
 
 
 # --- Flask web server so Render's Web Service sees an open port ---
-
 app = Flask(__name__)
 
 @app.route("/")
 def home():
     return "Twirl is wandering Emerald Shores 🐌✨"
 
+
 def run_web():
-    # Render provides the port in the PORT env var
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-if __name__ == "__main__":
+
+def main():
     # Start tiny web server in a background thread
     threading.Thread(target=run_web, daemon=True).start()
 
-    # Start the Discord bot (Twirl)
+    print("Starting Twirl… token starts with:", DISCORD_TOKEN[:8])
+    print("DISCORD_TOKEN length:", len(DISCORD_TOKEN))
+
+    # Start the Discord bot (single, clean run)
     bot.run(DISCORD_TOKEN)
 
-import asyncio
 
-async def main():
-    while True:
-        try:
-            await bot.start(DISCORD_TOKEN)
-        except Exception as e:
-            print("Bot crashed — restarting:", e)
-            await asyncio.sleep(5)
-
-asyncio.run(main())
-
+if __name__ == "__main__":
+    main()
