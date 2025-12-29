@@ -1,4 +1,6 @@
 import os
+import time
+import random
 import discord
 from discord.ext import commands
 import openai
@@ -7,6 +9,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 
 openai.api_key = OPENAI_KEY
+
 
 # === SETTINGS ===
 REPLY_CHANCE = 12     # 1-in-12 chance to reply
@@ -82,3 +85,4 @@ async def on_message(message):
     await bot.process_commands(message)
 
 bot.run(DISCORD_TOKEN)
+
