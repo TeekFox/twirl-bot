@@ -5,18 +5,26 @@ import threading
 
 import discord
 from discord.ext import commands
-import openai
 from flask import Flask
+
+from openai import OpenAI
+
 
 # === ENV VARS ===
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 
-openai.api_key = OPENAI_KEY
+if not DISCORD_TOKEN:
+    print("ERROR: DISCORD_TOKEN env var is missing!")
+if not OPENAI_KEY:
+    print("ERROR: OPENAI_KEY env var is missing!")
+
+client = OpenAI(api_key=OPENAI_KEY)
+
 
 # === SETTINGS ===
-REPLY_CHANCE = 3         # 1-in-3 random chance (for normal messages)
-CHANNEL_COOLDOWN = 25    # seconds between random replies per channel
+REPLY_CHANCE = 3        # 1-in-3 chance to reply to normal messages
+CHANNEL_COOLDOWN = 25   # seconds between replies per channel
 MAX_REPLY_LENGTH = 300
 
 SYSTEM_PROMPT = """
@@ -35,24 +43,25 @@ Rules:
 """
 
 # === DISCORD SETUP ===
+
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Per-channel cooldown tracking
-channel_last_reply = {}
+# Track last reply time per channel so we don’t spam
+channel_last_reply: dict[int, float] = {}
 
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} 🐌")
-    print(f"DISCORD_TOKEN length: {len(DISCORD_TOKEN) if DISCORD_TOKEN else 'None'}")
+    print("Twirl is ready to wander Emerald Shores!")
 
 
 @bot.event
 async def on_message(message: discord.Message):
-    # Don't respond to other bots (including Twirl herself)
+    # Ignore other bots (including Twirl herself)
     if message.author.bot:
         return
 
@@ -60,35 +69,26 @@ async def on_message(message: discord.Message):
     if not content:
         return
 
-    lower = content.lower()
+    content_lower = content.lower()
 
-    # --- Detect if Twirl is directly addressed ---
-    mentioned_by_name = "twirl" in lower
-    mentioned_by_mention = False
-    if bot.user:
-        mentioned_by_mention = bot.user in message.mentions
-
-    must_reply = mentioned_by_name or mentioned_by_mention
+    # --- FORCE REPLY IF NAME IS MENTIONED ---
+    name_mentioned = "twirl" in content_lower
 
     now = time.time()
     last = channel_last_reply.get(message.channel.id, 0)
 
-    # --- Random / cooldown logic (ignored if must_reply is True) ---
-    if not must_reply:
-        # Respect cooldown for random replies
-        if now - last < CHANNEL_COOLDOWN:
-            return
+    # Cooldown only applies if her name is NOT mentioned
+    if not name_mentioned and (now - last < CHANNEL_COOLDOWN):
+        return
 
-        # 1-in-REPLY_CHANCE chance to reply
-        if random.randint(1, REPLY_CHANCE) != 1:
-            return
+    # Random chance only applies if her name is NOT mentioned
+    if not name_mentioned and random.randint(1, REPLY_CHANCE) != 1:
+        return
 
-    # If we reach here, Twirl has decided to reply
     try:
-        print(f"[Twirl] Generating reply. Must_reply={must_reply}, content='{content}'")
-
         async with message.channel.typing():
-            completion = openai.ChatCompletion.create(
+            # Call OpenAI for a reply
+            response = client.chat.completions.create(
                 model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
@@ -98,33 +98,37 @@ async def on_message(message: discord.Message):
                 temperature=0.9,
             )
 
-        reply = completion.choices[0].message["content"]
-        reply = reply[:MAX_REPLY_LENGTH]
+            reply = response.choices[0].message.content or ""
+            reply = reply[:MAX_REPLY_LENGTH]
 
-        await message.channel.send(reply)
+            if not reply.strip():
+                # Just in case OpenAI returns something weird/empty
+                reply = "🐌 Twirl got a little shy and lost her words for a moment… could you try asking again?"
 
-        # Update cooldown *after* a successful send (for random replies)
-        channel_last_reply[message.channel.id] = now
+            await message.channel.send(reply)
+
+            # Only update cooldown when she actually sends a message
+            channel_last_reply[message.channel.id] = now
 
     except Exception as e:
-        # Print full error to Render logs
+        # Log error in Render logs
         print("Error while generating or sending reply:", repr(e))
-
-        # Try to send a small error hint into Discord (optional but helpful)
+        # Cute fallback so she still responds
         try:
             await message.channel.send(
-                "🐌 Oh no, my thoughts got tangled in the bushes… "
-                "Teek, could you check my logs on Render?"
+                "🐌 Oh no, my thoughts got tangled in the bushes… Teek, could you check my logs on Render?"
             )
         except Exception as send_err:
-            print("Also failed to send error message:", repr(send_err))
+            print("Error sending fallback message:", repr(send_err))
 
-    # Let commands still work if you add any later
+    # Let commands (like !something) still work
     await bot.process_commands(message)
 
 
-# === Tiny Flask server so Render sees an open port ===
+# === TINY FLASK WEB SERVER FOR RENDER ===
+
 app = Flask(__name__)
+
 
 @app.route("/")
 def home():
@@ -136,12 +140,12 @@ def run_web():
     app.run(host="0.0.0.0", port=port)
 
 
+# === ENTRY POINT ===
+
 if __name__ == "__main__":
-    # Start the tiny web server in the background
+    # Start the little web server in the background (for Render)
     threading.Thread(target=run_web, daemon=True).start()
 
-    print("Starting Twirl…")
-    print(f"Token starts with: {DISCORD_TOKEN[:5] if DISCORD_TOKEN else 'None'}")
+    # Start the Discord bot
     bot.run(DISCORD_TOKEN)
-
 
