@@ -108,3 +108,15 @@ if __name__ == "__main__":
     # Start the Discord bot (Twirl)
     bot.run(DISCORD_TOKEN)
 
+import asyncio
+
+async def main():
+    while True:
+        try:
+            await bot.start(DISCORD_TOKEN)
+        except Exception as e:
+            print("Bot crashed — restarting:", e)
+            await asyncio.sleep(5)
+
+asyncio.run(main())
+
