@@ -1,18 +1,21 @@
 import os
 import time
 import random
+import threading
+
 import discord
 from discord.ext import commands
 import openai
-
+from flask import Flask
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 
 openai.api_key = OPENAI_KEY
 
 
+
 # === SETTINGS ===
-REPLY_CHANCE = 12     # 1-in-12 chance to reply
+REPLY_CHANCE = 3     # 1-in-3 chance to reply
 CHANNEL_COOLDOWN = 25 # seconds between replies per channel
 MAX_REPLY_LENGTH = 300
 
@@ -84,5 +87,24 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-bot.run(DISCORD_TOKEN)
+
+# --- Flask web server so Render's Web Service sees an open port ---
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Twirl is wandering Emerald Shores 🐌✨"
+
+def run_web():
+    # Render provides the port in the PORT env var
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+if __name__ == "__main__":
+    # Start tiny web server in a background thread
+    threading.Thread(target=run_web, daemon=True).start()
+
+    # Start the Discord bot (Twirl)
+    bot.run(DISCORD_TOKEN)
 
